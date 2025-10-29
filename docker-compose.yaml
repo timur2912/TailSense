@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Frontend - Streamlit приложение
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - AGENT_HOST=agent
+      - AGENT_PORT=7860
+    volumes:
+      # Для разработки - монтируем код для горячей перезагрузки
+      - ./frontend:/app
+      - /app/venv  # Исключаем виртуальную среду из монтирования
+    networks:
+      - tailsense-network
+    depends_on:
+      - agent
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+  # Agent - LangFlow приложение
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    environment:
+      # Настройки для корректного сохранения данных
+      - LANGFLOW_CONFIG_DIR=/app/langflow-config-dir
+      - LANGFLOW_LOAD_FLOWS_PATH=/app/flows
+      - LANGFLOW_SAVE_DB_IN_CONFIG_DIR=true
+      - LANGFLOW_AUTO_SAVING=true
+      - LANGFLOW_AUTO_SAVE_INTERVAL=30
+    env_file:
+      - ./agent/docker.env
+    volumes:
+      # Монтируем flows для сохранения изменений в JSON
+      - ./agent/flows:/app/flows:rw
+      - ./agent/docker.env:/app/.env:ro
+      # Персистентное хранение конфигурации и данных LangFlow
+      - langflow_config:/app/langflow-config-dir
+      # Дополнительная папка для логов и данных агента
+      - ./agent/data:/app/data
+    networks:
+      - tailsense-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+  # Backend - заготовка для будущего API (пока закомментирован)
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - PYTHONPATH=/app
+  #   networks:
+  #     - tailsense-network
+  #   restart: unless-stopped
+
+networks:
+  tailsense-network:
+    driver: bridge
+
+# Volumes для персистентного хранения данных
+volumes:
+  postgres_data:
+  redis_data:
+  langflow_config:
